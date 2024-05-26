@@ -24,13 +24,11 @@ func ReverseProxy(rawURL string) (http.HandlerFunc, error) {
 	return handler(proxy), nil
 }
 
-// devProxy is a function which modifies the mount response
-// to redirect the traffic to localhost:19006 which is ui development server
-// we need this because CORS cookie is not working as expected and causes
-// login and logout to fail
-func DevProxy(r Router, service http.Handler, isDev bool, proxyAddr string, exceptions []string) error {
+// DevProxy is for serving static files in development mode.
+// mainly used for UI development with a separate server.
+func DevProxy(mux *http.ServeMux, service http.Handler, isDev bool, proxyAddr string, exceptions []string) error {
 	if !isDev {
-		r.Mount("/", service)
+		mux.Handle("/", service)
 		return nil
 	}
 
@@ -40,7 +38,7 @@ func DevProxy(r Router, service http.Handler, isDev bool, proxyAddr string, exce
 		return err
 	}
 
-	r.Mount("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, e := range exceptions {
 			if strings.HasPrefix(r.URL.Path, e) {
 				service.ServeHTTP(w, r)
