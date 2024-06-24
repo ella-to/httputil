@@ -6,11 +6,19 @@ import (
 	jwtgo "github.com/golang-jwt/jwt/v5"
 )
 
-type JwtToken = jwtgo.Token
-type JwtClaims = jwtgo.Claims
-type JwtRegisteredClaims = jwtgo.RegisteredClaims
+type (
+	JwtToken            = jwtgo.Token
+	JwtClaims           = jwtgo.Claims
+	JwtRegisteredClaims = jwtgo.RegisteredClaims
+	JwtMapClaims        = jwtgo.MapClaims
+)
 
-var JwtNewNumericDate = jwtgo.NewNumericDate
+var (
+	JwtParseRSAPrivateKeyFromPEM = jwtgo.ParseRSAPrivateKeyFromPEM
+	JwtNewWithClaims             = jwtgo.ParseRSAPrivateKeyFromPEM
+	JwtSigningMethodRS256        = jwtgo.ParseRSAPrivateKeyFromPEM
+	JwtNewNumericDate            = jwtgo.NewNumericDate
+)
 
 type TokenParser interface {
 	ParseToken(token *JwtToken) error
