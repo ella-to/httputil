@@ -15,8 +15,8 @@ type (
 
 var (
 	JwtParseRSAPrivateKeyFromPEM = jwtgo.ParseRSAPrivateKeyFromPEM
-	JwtNewWithClaims             = jwtgo.ParseRSAPrivateKeyFromPEM
-	JwtSigningMethodRS256        = jwtgo.ParseRSAPrivateKeyFromPEM
+	JwtNewWithClaims             = jwtgo.NewWithClaims
+	JwtSigningMethodRS256        = jwtgo.SigningMethodRS256
 	JwtNewNumericDate            = jwtgo.NewNumericDate
 )
 
