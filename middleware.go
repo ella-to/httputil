@@ -47,15 +47,15 @@ func WithLogging(next http.Handler) http.Handler {
 		// Call the next handler in the chain
 		next.ServeHTTP(sr, r)
 
-		var fn func(string, ...any)
+		var fn func(context.Context, string, ...any)
 
 		if sr.statusCode < 400 {
-			fn = slog.Info
+			fn = slog.InfoContext
 		} else {
-			fn = slog.Error
+			fn = slog.ErrorContext
 		}
 
-		fn("http called", "method", r.Method, "path", r.URL.Path, "code", sr.statusCode, "size", sr.bytesWritten)
+		fn(r.Context(), "http called", "method", r.Method, "path", r.URL.Path, "code", sr.statusCode, "size", sr.bytesWritten)
 	})
 }
 
