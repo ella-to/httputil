@@ -63,7 +63,10 @@ func WithLogging(next http.Handler) http.Handler {
 // SESSION CONTEXT MIDDLEWARE
 //
 
-func WithSessionContext[T any](cookieKey CookieKey, ctxKey ContextKey, parseSession func(token string) (T, error)) func(next http.Handler) http.Handler {
+// If ctxTokenKey is set, the actual token string will be store in the context under that key.
+// this is useful if you need to look into the token later in the request lifecycle.
+
+func WithSessionContext[T any](cookieKey CookieKey, ctxKey ContextKey, ctxTokenKey string, parseSession func(token string) (T, error)) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			var token string
@@ -90,7 +93,14 @@ func WithSessionContext[T any](cookieKey CookieKey, ctxKey ContextKey, parseSess
 				return
 			}
 
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey, session)))
+			ctx := r.Context()
+
+			if ctxTokenKey != "" {
+				// Store the token in the context if ctxTokenKey is set
+				ctx = context.WithValue(ctx, ctxTokenKey, token)
+			}
+
+			next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, ctxKey, session)))
 		}
 
 		return http.HandlerFunc(fn)
