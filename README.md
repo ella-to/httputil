@@ -10,13 +10,15 @@ A comprehensive HTTP utilities library for Go that provides common HTTP function
 - 🛠️ **Middleware** - Logging, session context, and middleware chaining
 - 🔄 **Reverse Proxy** - Simple reverse proxy with development mode support
 - 📁 **File Serving** - Static file serving with SPA fallback support
+- 📤 **Streaming Upload** - Multipart upload server/client helpers with strict limits
+- 📥 **Streaming Download** - Download server/client helpers with parsed metadata
 - 📏 **Request Limiting** - Request body size limiting for security
 - ⚡ **Zero Dependencies** - Minimal external dependencies (only JWT library)
 
 ## Installation
 
 ```bash
-go get ella.to/httputil
+go get ella.to/httputil@0.0.6
 ```
 
 ## Quick Start
@@ -27,6 +29,7 @@ package main
 import (
     "net/http"
     "time"
+    
     "ella.to/httputil"
 )
 
@@ -433,6 +436,239 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
     var data map[string]interface{}
     json.Unmarshal(body, &data)
     // Process data...
+}
+```
+
+### Upload
+
+#### StreamMultipartUpload
+
+Streams multipart file uploads on the server with hard limits.
+
+```go
+func StreamMultipartUpload(
+        r *http.Request,
+        limits UploadLimits,
+        onFile func(file UploadedFile, content io.Reader) error,
+) (UploadSummary, error)
+```
+
+**Limits:**
+- `MaxFileSize` - Maximum bytes per file (`0` means unlimited)
+- `MaxFiles` - Maximum number of files (`0` means unlimited)
+- `MaxTotalBytes` - Maximum bytes across all files (`0` means unlimited)
+
+**Example (server):**
+```go
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+        summary, err := httputil.StreamMultipartUpload(r, httputil.UploadLimits{
+                MaxFileSize:   10 << 20, // 10MB per file
+                MaxFiles:      5,
+                MaxTotalBytes: 25 << 20, // 25MB total
+        }, func(file httputil.UploadedFile, content io.Reader) error {
+                // Stream directly to storage (disk, S3, etc.) without buffering full file.
+                dst, err := os.Create("./uploads/" + file.FileName)
+                if err != nil {
+                        return err
+                }
+                defer dst.Close()
+
+                _, err = io.Copy(dst, content)
+                return err
+        })
+        if err != nil {
+                var limitErr *httputil.UploadLimitError
+                if errors.As(err, &limitErr) {
+                        http.Error(w, limitErr.Error(), http.StatusRequestEntityTooLarge)
+                        return
+                }
+                http.Error(w, err.Error(), http.StatusBadRequest)
+                return
+        }
+
+        fmt.Fprintf(w, "uploaded files=%d bytes=%d", summary.Files, summary.TotalBytes)
+}
+```
+
+#### NewMultipartUploadRequest
+
+Creates a streaming multipart upload request on the client.
+
+```go
+func NewMultipartUploadRequest(
+        ctx context.Context,
+        method string,
+        url string,
+        fields map[string]string,
+        files []UploadRequestFile,
+        limits UploadLimits,
+) (*http.Request, error)
+```
+
+**Example (client):**
+```go
+req, err := httputil.NewMultipartUploadRequest(
+        context.Background(),
+        http.MethodPost,
+        "https://api.example.com/upload",
+        map[string]string{"folder": "avatars"},
+        []httputil.UploadRequestFile{
+                {
+                        FieldName:   "files",
+                        FileName:    "profile.png",
+                        ContentType: "image/png",
+                        Reader:      fileReader,
+                        Size:        fileSize, // set -1 if unknown
+                },
+        },
+        httputil.UploadLimits{MaxFileSize: 10 << 20, MaxFiles: 3, MaxTotalBytes: 20 << 20},
+)
+if err != nil {
+        // Includes UploadLimitError when limits are exceeded
+}
+
+resp, err := http.DefaultClient.Do(req)
+```
+
+### Download
+
+#### ServeDownload
+
+Server helper for streamed file downloads. The provider inspects request data and returns an `io.ReadCloser` stream.
+
+```go
+func ServeDownload(
+        w http.ResponseWriter,
+        r *http.Request,
+        provider func(r *http.Request) (DownloadSource, error),
+) error
+```
+
+**Example (server):**
+```go
+func downloadHandler(w http.ResponseWriter, r *http.Request) {
+        err := httputil.ServeDownload(w, r, func(req *http.Request) (httputil.DownloadSource, error) {
+                fileID := req.URL.Query().Get("id")
+                rc, size, err := openFileFromStore(fileID)
+                if err != nil {
+                        return httputil.DownloadSource{}, err
+                }
+                return httputil.DownloadSource{
+                        Name:        "report.csv",
+                        ContentType: "text/csv",
+                        Size:        size,
+                        Reader:      rc,
+                }, nil
+        })
+        if err != nil {
+                http.Error(w, err.Error(), http.StatusNotFound)
+        }
+}
+```
+
+#### Download
+
+Client helper that executes a request and parses `Content-Disposition`, `Content-Type`, and `Content-Length`.
+
+```go
+func Download(client *http.Client, req *http.Request) (*DownloadResponse, error)
+```
+
+**Example (client):**
+```go
+req, _ := http.NewRequest(http.MethodGet, "https://api.example.com/download?id=123", nil)
+resp, err := httputil.Download(http.DefaultClient, req)
+if err != nil {
+        return
+}
+defer resp.Body.Close()
+
+fmt.Println("name:", resp.Metadata.FileName)
+fmt.Println("type:", resp.Metadata.ContentType)
+fmt.Println("size:", resp.Metadata.Size)
+
+_, _ = io.Copy(dstFile, resp.Body)
+```
+
+## Browser Upload & Download (TypeScript)
+
+The browser can enforce the same constraints before sending to the server, and can parse download metadata from response headers.
+
+### Upload Example (TypeScript)
+
+```ts
+type UploadLimits = {
+    maxFileSize: number;
+    maxFiles: number;
+    maxTotalBytes: number;
+};
+
+async function uploadFiles(endpoint: string, files: File[], limits: UploadLimits) {
+    if (files.length > limits.maxFiles) {
+        throw new Error(`too many files: ${files.length} > ${limits.maxFiles}`);
+    }
+
+    let total = 0;
+    for (const file of files) {
+        if (file.size > limits.maxFileSize) {
+            throw new Error(`file too large: ${file.name}`);
+        }
+        total += file.size;
+    }
+
+    if (total > limits.maxTotalBytes) {
+        throw new Error(`total bytes too large: ${total} > ${limits.maxTotalBytes}`);
+    }
+
+    const formData = new FormData();
+    for (const file of files) {
+        formData.append("files", file, file.name);
+    }
+
+    const res = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+    });
+
+    if (!res.ok) {
+        throw new Error(`upload failed: ${res.status}`);
+    }
+
+    return res.text();
+}
+```
+
+### Download Example (TypeScript)
+
+```ts
+function parseFileName(contentDisposition: string | null): string | undefined {
+    if (!contentDisposition) return undefined;
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+    const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+    return plainMatch?.[1];
+}
+
+async function downloadFile(endpoint: string) {
+    const res = await fetch(endpoint, { method: "GET" });
+    if (!res.ok) {
+        throw new Error(`download failed: ${res.status}`);
+    }
+
+    const fileName = parseFileName(res.headers.get("content-disposition")) ?? "download.bin";
+    const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+    const size = Number(res.headers.get("content-length") ?? "-1");
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(new Blob([blob], { type: contentType }));
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    return { fileName, contentType, size };
 }
 ```
 
