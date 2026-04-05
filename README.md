@@ -1,6 +1,22 @@
-# httputil
+```
+██╗░░██╗████████╗████████╗██████╗░██╗░░░██╗████████╗██╗██╗░░░░░
+██║░░██║╚══██╔══╝╚══██╔══╝██╔══██╗██║░░░██║╚══██╔══╝██║██║░░░░░
+███████║░░░██║░░░░░░██║░░░██████╔╝██║░░░██║░░░██║░░░██║██║░░░░░
+██╔══██║░░░██║░░░░░░██║░░░██╔═══╝░██║░░░██║░░░██║░░░██║██║░░░░░
+██║░░██║░░░██║░░░░░░██║░░░██║░░░░░╚██████╔╝░░░██║░░░██║███████╗
+╚═╝░░╚═╝░░░╚═╝░░░░░░╚═╝░░░╚═╝░░░░░░╚═════╝░░░░╚═╝░░░╚═╝╚══════╝
+```
+
+<div align="center">
+
+[![Go Reference](https://pkg.go.dev/badge/ella.to/httputil.svg)](https://pkg.go.dev/ella.to/httputil)
+[![Go Report Card](https://goreportcard.com/badge/ella.to/httputil)](https://goreportcard.com/report/ella.to/httputil)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive HTTP utilities library for Go that provides common HTTP functionality including JWT handling, middleware, proxying, file serving, and more.
+
+</div>
+
 
 ## Features
 
@@ -18,7 +34,7 @@ A comprehensive HTTP utilities library for Go that provides common HTTP function
 ## Installation
 
 ```bash
-go get ella.to/httputil@0.0.6
+go get ella.to/httputil@0.0.7
 ```
 
 ## Quick Start
@@ -29,7 +45,7 @@ package main
 import (
     "net/http"
     "time"
-    
+
     "ella.to/httputil"
 )
 
