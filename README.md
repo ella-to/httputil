@@ -34,7 +34,7 @@ A comprehensive HTTP utilities library for Go that provides common HTTP function
 ## Installation
 
 ```bash
-go get ella.to/httputil@0.0.7
+go get ella.to/httputil@0.0.8
 ```
 
 ## Quick Start
