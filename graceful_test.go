@@ -23,7 +23,7 @@ func TestRunHTTPServerStopsOnContextCancel(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- RunHttpServer(ctx, server, 0)
+		errCh <- RunHttpServer(ctx, server, 0, nil)
 	}()
 
 	waitForServerUp(t, "http://"+addr)
@@ -53,7 +53,7 @@ func TestRunHTTPServerExitsWhenServerClosedExternally(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- RunHttpServer(context.Background(), server, 0)
+		errCh <- RunHttpServer(context.Background(), server, 0, nil)
 	}()
 
 	waitForServerUp(t, "http://"+addr)
@@ -93,7 +93,7 @@ func TestRunHTTPServerShutdownTimeout(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- RunHttpServer(ctx, server, 100*time.Millisecond)
+		errCh <- RunHttpServer(ctx, server, 100*time.Millisecond, nil)
 	}()
 
 	baseURL := "http://" + addr
@@ -133,6 +133,43 @@ func TestRunHTTPServerShutdownTimeout(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("blocking request did not complete after release")
 	}
+}
+
+func TestRunHTTPServerServesProvidedListener(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to allocate test listener: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunHttpServer(ctx, server, 0, ln)
+	}()
+
+	waitForServerUp(t, "http://"+addr)
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunHttpServer returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunHttpServer did not return after context cancellation")
+	}
+
+	waitForServerDown(t, "http://"+addr)
 }
 
 func freeAddr(t *testing.T) string {

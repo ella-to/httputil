@@ -3,6 +3,7 @@ package httputil
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,26 +13,31 @@ import (
 
 const defaultShutdownTimeout = 10 * time.Second
 
-// RunHttpServer starts server.ListenAndServe and blocks until the server exits.
+// RunHttpServer starts the server and blocks until it exits.
 //
 // Usage:
 //
-//	err := RunHttpServer(ctx, srv, 5*time.Second)
+//	err := RunHttpServer(ctx, srv, 5*time.Second, nil)
 //
 // The function is intended to be called from main after wiring routes and middleware.
 // It coordinates graceful shutdown in one place:
 //   - the server is stopped when ctx is canceled (for example from signal handling
 //     or a parent service shutdown),
 //   - OS interrupts (SIGINT/SIGTERM) are also wired into ctx via signal.NotifyContext,
-//   - if the server is closed externally, the function returns after the ListenAndServe
+//   - if the server is closed externally, the function returns after the serve
 //     goroutine exits.
 //
 // shutdownTimeout limits how long Shutdown waits for in-flight requests to finish.
 // If shutdownTimeout <= 0, a sensible default is used.
 //
+// ls controls how the server accepts connections. If ls is non-nil, the server
+// serves on the provided listener via server.Serve (useful when the caller needs
+// to bind the address itself, for example to use port 0 and discover the chosen
+// port). If ls is nil, the server binds server.Addr via server.ListenAndServe.
+//
 // context.WithoutCancel(ctx) is used for shutdown so cleanup can still run after ctx
 // cancellation, while still preserving context values for logging/tracing.
-func RunHttpServer(ctx context.Context, server *http.Server, shutdownTimeout time.Duration) error {
+func RunHttpServer(ctx context.Context, server *http.Server, shutdownTimeout time.Duration, ls net.Listener) error {
 	if shutdownTimeout <= 0 {
 		shutdownTimeout = defaultShutdownTimeout
 	}
@@ -41,11 +47,19 @@ func RunHttpServer(ctx context.Context, server *http.Server, shutdownTimeout tim
 
 	serverErrCh := make(chan error, 1)
 	go func() {
-		err := server.ListenAndServe()
+		var err error
+
+		if ls != nil {
+			err = server.Serve(ls)
+		} else {
+			err = server.ListenAndServe()
+		}
+
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrCh <- err
 			return
 		}
+
 		serverErrCh <- nil
 	}()
 
