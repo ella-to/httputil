@@ -12,32 +12,36 @@ import (
 )
 
 type ContentConfig struct {
-	Dev            bool
-	WebAddr        string
-	APIHandler     http.Handler
-	APIPrefixPaths []string
-	Intercept      func(w http.ResponseWriter, r *http.Request, isExist func(path string) bool) bool
-	Files          fs.FS
+	DevWebAddr string // If not empty, use dev server proxy instead of static files
+	Intercept  func(w http.ResponseWriter, r *http.Request, isExist func(path string) bool) bool
+	Files      fs.FS
 }
 
 func NewContentHandler(ctx context.Context, config ContentConfig) (http.Handler, error) {
-	if config.Dev {
-		slog.InfoContext(ctx, "serving web ui from dev server", "addr", config.WebAddr)
-		mux := http.NewServeMux()
-		err := DevProxy(
-			mux,
-			config.APIHandler,
-			config.Dev,
-			config.WebAddr,
-			config.APIPrefixPaths,
-		)
+	// Use dev proxy if DevWebAddr is provided
+	if config.DevWebAddr != "" {
+		slog.InfoContext(ctx, "serving web ui from dev server", "addr", config.DevWebAddr)
+		staticFile, err := ReverseProxy(config.DevWebAddr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dev proxy: %w", err)
 		}
 
-		return mux, nil
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Normalize URL path
+			if r.URL.Path == "" {
+				r.URL.Path = "/"
+			}
+
+			// Use intercept if provided
+			if config.Intercept != nil && config.Intercept(w, r, func(path string) bool { return true }) {
+				return
+			}
+
+			staticFile.ServeHTTP(w, r)
+		}), nil
 	}
 
+	// Production mode: serve from static files
 	contentStatic, _ := fs.Sub(config.Files, "dist")
 	fileExistenceCache, sizeCache := buildStaticCaches(contentStatic)
 	fileServer := gzipFileServer(sizeCache, ServeFile(contentStatic))
@@ -48,18 +52,12 @@ func NewContentHandler(ctx context.Context, config ContentConfig) (http.Handler,
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for _, prefix := range config.APIPrefixPaths {
-			if strings.HasPrefix(r.URL.Path, prefix) {
-				config.APIHandler.ServeHTTP(w, r)
-				return
-			}
-		}
-
-		// just normalize the url path
+		// Normalize URL path
 		if r.URL.Path == "" {
 			r.URL.Path = "/"
 		}
 
+		// Use intercept if provided, if it returns true, request is handled
 		if config.Intercept != nil && config.Intercept(w, r, isFileExists) {
 			return
 		}
